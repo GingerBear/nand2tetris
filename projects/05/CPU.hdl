@@ -40,4 +40,31 @@ CHIP CPU {
 
     PARTS:
     // Put your code here:
+    Not(in=instruction[15], out=loadA);
+    Or(a=loadA, b=instruction[5], out=loadAOrD1);
+    ARegister(load=loadAOrD1, in=valA, out=aOut, out[0..14]=addressM); // A register
+    
+    And(a=instruction[4], b=instruction[15], out=loadD);
+    DRegister(load=loadD, in=aluOut, out=dOut); // D register
+    And(a=instruction[3], b=instruction[15], out=writeM); // writeM
+
+    Mux16(a=instruction, b=aluOut, sel=instruction[15], out=valA);
+    Mux16(a=aOut, b=inM, sel=instruction[12], out=aluIn);
+
+    ALU(x=dOut, y=aluIn, zx=instruction[11], nx=instruction[10], zy=instruction[9], ny=instruction[8], f=instruction[7], no=instruction[6], out=aluOut, zr=zr, ng=ng); 
+    And16(a=aluOut, b=true, out=outM); // writeM
+
+    // noJump is neg to load
+    // load depends on aluOut
+    Or(a=zr, b=ng, out=gt1);
+    Not(in=gt1, out=gt); // if out > 0 
+    And(a=instruction[2], b=ng, out=jp1); // out < 0 
+    And(a=instruction[1], b=zr, out=jp2); // out == 0 
+    And(a=instruction[0], b=gt, out=jp3); // out > 0 
+    Or(a=jp1, b=jp2, out=jp12);
+    Or(a=jp12, b=jp3, out=jp123);
+    And(a=jp123, b=instruction[15], out=jp);
+    Not(in=jp, out=noJump);
+
+    PC(in=aOut, load=jp, inc=noJump, reset=reset, out[0..14]=pc);
 }
