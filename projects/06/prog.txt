@@ -1,0 +1,274 @@
+/**
+ * written in Node.js
+ */
+
+const readline = require('readline');
+const fs = require('fs');
+
+function createLineReader(file) {
+  return readline.createInterface({
+    input: fs.createReadStream(file),
+    crlfDelay: Infinity
+  });
+}
+
+function createLineWriter(file) {
+  return fs.createWriteStream(file, {
+    flags: 'a'
+  });
+}
+
+function buildSymbolTable(source, cb) {
+  const fileReader = createLineReader(source);
+  const table = {
+    SP: 0,
+    LCL: 1,
+    ARG: 2,
+    THIS: 3,
+    THAT: 4,
+    R0: 0,
+    R1: 1,
+    R2: 2,
+    R3: 3,
+    R4: 4,
+    R5: 5,
+    R6: 6,
+    R7: 7,
+    R8: 8,
+    R9: 9,
+    R10: 10,
+    R11: 11,
+    R12: 12,
+    R13: 13,
+    R14: 14,
+    R15: 15,
+    SCREEN: 16384,
+    KBD: 24576
+  };
+  let lineNum = 0;
+
+  fileReader
+    .on('line', line => {
+      line = line.trim();
+      if (isComment(line) || isWriteSpace(line)) {
+        return null;
+      } else if (isAInstruction(line)) {
+        lineNum++;
+      } else if (line.indexOf('(') === 0) {
+        table[line.replace('(', '').replace(')', '')] = lineNum;
+      } else {
+        lineNum++;
+      }
+    })
+    .on('close', () => {
+      cb(null, table);
+    });
+}
+
+function isComment(line) {
+  return line.indexOf('//') === 0;
+}
+function isWriteSpace(line) {
+  return line === '';
+}
+function isAInstruction(line) {
+  return line.indexOf('@') === 0;
+}
+function tokenizeCInstruction(line) {
+  line = line.split('//')[0].trim();
+  let dest = '';
+  let comp = '';
+  let jump = '';
+
+  const destSplit = line.split('=');
+  if (destSplit.length === 2) {
+    dest = destSplit[0].trim();
+    line = destSplit[1].trim();
+  }
+
+  const compSplit = line.split(';');
+  if (compSplit.length === 2) {
+    comp = compSplit[0].trim();
+    jump = compSplit[1].trim();
+  } else {
+    comp = line;
+  }
+
+  return { dest, comp, jump };
+}
+function parseComp(str) {
+  switch (str) {
+    case '0':
+      return '0101010';
+    case '1':
+      return '0111111';
+    case '-1':
+      return '0111010';
+    case 'D':
+      return '0001100';
+    case 'A':
+      return '0110000';
+    case '!D':
+      return '0001101';
+    case '!A':
+      return '0110001';
+    case '-D':
+      return '0001111';
+    case '-A':
+      return '0110011';
+    case 'D+1':
+      return '0011111';
+    case 'A+1':
+      return '0110111';
+    case 'D-1':
+      return '0001110';
+    case 'A-1':
+      return '0110010';
+    case 'D+A':
+      return '0000010';
+    case 'D-A':
+      return '0010011';
+    case 'A-D':
+      return '0000111';
+    case 'D&A':
+      return '0000000';
+    case 'D|A':
+      return '0010101';
+    case 'M':
+      return '1110000';
+    case '!M':
+      return '1110001';
+    case '-M':
+      return '1110011';
+    case 'M+1':
+      return '1110111';
+    case 'M-1':
+      return '1110010';
+    case 'D+M':
+      return '1000010';
+    case 'D-M':
+      return '1010011';
+    case 'M-D':
+      return '1000111';
+    case 'D&M':
+      return '1000000';
+    case 'D|M':
+      return '1010101';
+    default:
+      return 'UNKNOWN_DEST';
+  }
+}
+function parseJump(str) {
+  switch (str) {
+    case '':
+      return '000';
+    case 'JGT':
+      return '001';
+    case 'JEQ':
+      return '010';
+    case 'JGE':
+      return '011';
+    case 'JLT':
+      return '100';
+    case 'JNE':
+      return '101';
+    case 'JLE':
+      return '110';
+    case 'JMP':
+      return '111';
+    default:
+      return 'UNKNOWN_COMP';
+  }
+}
+function parseDest(str) {
+  switch (str) {
+    case '':
+      return '000';
+    case 'M':
+      return '001';
+    case 'D':
+      return '010';
+    case 'MD':
+      return '011';
+    case 'A':
+      return '100';
+    case 'AM':
+      return '101';
+    case 'AD':
+      return '110';
+    case 'AMD':
+      return '111';
+    default:
+      break;
+  }
+}
+function leftPad(str, num, padChar) {
+  if (str.length >= num) {
+    return str;
+  } else {
+    const padLen = num - str.length;
+    for (var i = 0; i < padLen; i++) {
+      str = padChar + str;
+    }
+    return str;
+  }
+}
+
+function compile(source, cb) {
+  const srcFile = source;
+  const destFile = source.replace('.asm', '.hack');
+
+  buildSymbolTable(srcfile, (err, table) => {
+    const fileReader = createLineReader(srcFile);
+    const fileWriter = createLineWriter(destFile);
+    let varRamIndex = 16;
+
+    fs.writeFileSync(destFile, '');
+
+    fileReader
+      .on('line', line => {
+        line = line.trim();
+        if (isComment(line) || isWriteSpace(line) || line.indexOf('(') === 0) {
+          return;
+        }
+
+        let translatedLine = '';
+        if (isAInstruction(line)) {
+          const lineStriped = line.replace('@', '');
+          let lineNumeric = null;
+
+          if (isNaN(+lineStriped)) {
+            if (table.hasOwnProperty(lineStriped)) {
+              lineNumeric = table[lineStriped];
+            } else {
+              lineNumeric = varRamIndex;
+              table[lineStriped] = lineNumeric;
+              varRamIndex++;
+            }
+          } else {
+            lineNumeric = +lineStriped;
+          }
+
+          translatedLine = '0' + leftPad((+lineNumeric).toString(2), 15, '0');
+        } else {
+          const { dest, comp, jump } = tokenizeCInstruction(line);
+          translatedLine = '111' + parseComp(comp) + parseDest(dest) + parseJump(jump);
+        }
+
+        fileWriter.write(translatedLine + '\n');
+      })
+      .on('close', () => {
+        fileWriter.end();
+        cb();
+      });
+  });
+}
+
+// const srcfile = __dirname + '/add/Add.asm';
+// const srcfile = __dirname + '/max/Max.asm';
+const srcfile = __dirname + '/pong/Pong.asm';
+// const srcfile = __dirname + '/rect/Rect.asm';
+
+compile(srcfile, () => {
+  console.log('DONE');
+});
